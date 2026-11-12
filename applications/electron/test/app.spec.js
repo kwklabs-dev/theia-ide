@@ -32,6 +32,13 @@ const builderConfig = fs.readFileSync(path.join(appDir, 'electron-builder.yml'),
 const productName = builderConfig.match(/^productName:\s*(.+)$/m)[1].trim();
 const packageName = require(path.join(appDir, 'package.json')).name;
 
+function isLinuxArm() {
+  if (os.platform() !== 'linux') {
+    return false;
+  }
+  return os.arch() === 'arm64';
+}
+
 function isMacArm() {
   if (os.platform() !== 'darwin') {
     return false;
@@ -46,13 +53,22 @@ function isMacArm() {
   }
 }
 
+function isWinArm() {
+  if (os.platform() !== 'win32') {
+    return false;
+  }
+  return os.arch() === 'arm64';
+}
+
 function getBinaryPath() {
   const distFolder = path.join(appDir, 'dist');
   switch (os.platform()) {
     case 'linux':
-      return path.join(distFolder, 'linux-unpacked', packageName);
+      const linuxFolder = isLinuxArm() ? 'linux-arm64' : 'linux';
+      return path.join(distFolder, `${linuxFolder}-unpacked`, packageName);
     case 'win32':
-      return path.join(distFolder, 'win-unpacked', `${productName}.exe`);
+      const winFolder = isWinArm() ? 'win-arm64' : 'win';
+      return path.join(distFolder, `${winFolder}-unpacked`, `${productName}.exe`);
     case 'darwin':
       const macFolder = isMacArm() ? 'mac-arm64' : 'mac';
       const binaryPath = path.join(

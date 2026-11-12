@@ -1,0 +1,115 @@
+name: Arm64 build, package and test (Windows, Linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}, Node.js v${{ matrix.node }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, windows-11-arm] # macOS is excluded
+        node: ["24.x"]
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # To fetch all history for all branches and tags. (Will be required for caching with lerna: https://github.com/markuplint/markuplint/pull/111)
+
+      - name: Install needed dev packages in Linux
+        if: runner.os == 'Linux'
+        run: |
+          gcc -v
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxkbfile-dev
+
+      - name: Use Node.js ${{ matrix.node }}
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Update electron-builder.yml (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          sed -i 's|https://download.eclipse.org/theia/ide/${version}/windows|https://download.eclipse.org/theia/ide/${version}/windows-arm|g' applications/electron/electron-builder.yml
+
+      - name: Update electron-builder.yml (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sed -i 's|https://download.eclipse.org/theia/ide/latest/linux|https://download.eclipse.org/theia/ide/latest/linux-arm|g' applications/electron/electron-builder.yml
+
+      - name: Install dependencies
+        shell: bash
+        run: yarn --skip-integrity-check --network-timeout 100000
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint
+        shell: bash
+        run: yarn lint
+
+      - name: Build prod package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          yarn build
+          yarn download:plugins
+          yarn package:applications
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
+
+      - name: Build prod package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          yarn build
+          yarn download:plugins
+          yarn package:applications
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
+
+      - name: Get the IDE application's version
+        shell: bash
+        run: |
+          ide_version=$(node -pe "require('./applications/electron/package.json').version")
+          echo "app_version=$ide_version" >> $GITHUB_ENV
+
+      - name: Upload distribution files
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ runner.os }}-v${{ env.app_version }}-arm64
+          path: |
+            applications/electron/dist/**
+
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a yarn electron test
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          yarn electron test
+
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: test-screenshots-${{ matrix.os }}

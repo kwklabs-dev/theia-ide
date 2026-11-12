@@ -83,6 +83,7 @@
     "theia-extensions/*"
   ],
   "resolutions": {
+    "node-gyp": "^13.1.0",
     "@types/puppeteer": "^5.4.7",
     "**/yauzl": "^3.3.1",
     "**/@tootallnate/once": "^2.0.1",
